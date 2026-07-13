@@ -30,7 +30,7 @@ const DEFAULT_SETTINGS = {
   currency: "$",
   receiptWidth: 80, // mm
   labelWidth: 40, // mm
-  labelHeight: 21, // mm
+  labelHeight: 20, // mm
 };
 
 const STATUSES = ["Received", "In progress", "Ready", "Delivered"];
@@ -150,7 +150,7 @@ function LabelDoc({ ticket, client, settings }) {
         <span className="l-no">{ticket.no}</span>
         <span className="l-date">{fmtDay(ticket.createdAt)}</span>
       </div>
-      <Barcode value={ticket.no} height="5.2mm" />
+      <Barcode value={ticket.no} height="4.8mm" />
       <div className="l-name">{client?.name || "—"}</div>
       <div className="l-meta">
         <span>{client?.phone || "—"}</span>
@@ -1028,7 +1028,7 @@ function ItemsPage({ items, settings, onSaveItems, onSaveSettings, say }) {
       ...s,
       receiptWidth: Number(s.receiptWidth) || 80,
       labelWidth: Number(s.labelWidth) || 40,
-      labelHeight: Number(s.labelHeight) || 21,
+      labelHeight: Number(s.labelHeight) || 20,
     });
     say("Setup saved.");
   };
@@ -1381,11 +1381,11 @@ select.in { cursor: pointer; }
 .r-foot { text-align: center; font-size: 9pt; font-weight: 700; margin-top: 3mm; line-height: 1.4; }
 .r-cut { text-align: center; font-size: 9pt; font-weight: 700; margin-top: 2mm; letter-spacing: .1em; }
 
-.doc-label { padding: 1mm 1.4mm; font-family: var(--mono); font-weight: 700; overflow: hidden; display: flex; flex-direction: column; justify-content: space-between; }
+.doc-label { padding: 0.7mm 1.4mm; font-family: var(--mono); font-weight: 700; overflow: hidden; display: flex; flex-direction: column; justify-content: space-between; }
 .l-top { display: flex; justify-content: space-between; align-items: baseline; }
-.l-no { font-size: 10pt; font-weight: 700; letter-spacing: .04em; }
+.l-no { font-size: 7pt; font-weight: 700; letter-spacing: .01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 26mm; }
 .l-date { font-size: 6pt; font-weight: 700; }
-.l-name { font-size: 8pt; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: .4mm; }
+.l-name { font-size: 8.5pt; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: .3mm; }
 .l-meta { display: flex; justify-content: space-between; gap: 2mm; font-size: 6.8pt; font-weight: 700; }
 .l-acc { font-weight: 700; }
 .l-dev { font-size: 6.8pt; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
