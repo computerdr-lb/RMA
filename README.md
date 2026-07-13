@@ -17,11 +17,43 @@ shows the same data, live.
 - Ticket: device type (editable list), with charger / with bag, repair notes,
   repair cost, status (Received → In progress → Ready → Delivered).
 - Receipt and label previews at true physical size, with a Code 39 barcode.
-- Ticket numbers come from a Postgres sequence — two people saving at the same
-  second can never get the same number.
+- **Works with no internet.** Look up a client, open a ticket, print a
+  receipt — all of it works offline. Changes sync automatically once the
+  connection is back, and a small bar at the top says so while it happens.
+- Ticket numbers are generated on the device, not the server, so they're
+  never blocked by a dropped connection — see "How offline works" below.
 - Live sync: a ticket booked at the counter appears on the workshop screen in
-  about a second, no refresh.
+  about a second, no refresh, whenever both are online.
 - Staff login. Nothing is readable without an account.
+
+---
+
+## How offline works
+
+Every screen reads from a local database in the browser (IndexedDB), so it
+opens and responds instantly whether or not there's internet. Every save
+writes there first, then queues to sync with Supabase. A small bar appears
+at the top only when it's relevant — working offline, or catching up — and
+disappears once everything's synced.
+
+**Ticket numbers** are the one thing that has to work differently offline.
+Instead of Postgres handing out `CD-00001`, `CD-00002`… in order, each
+device picks its own short tag the first time it's used (e.g. `CD-K3F9-0001`,
+`CD-7QAL-0001`). Two shop PCs, both offline at the same moment, can never
+produce the same number — there's no coordination needed between them.
+That number is permanent; it doesn't get renumbered once you're back online.
+
+**If you already ran the old schema.sql** (the one where Postgres assigned
+numbers), run [`supabase/offline-migration.sql`](supabase/offline-migration.sql)
+once — existing tickets are untouched.
+
+**Known limitation.** If PC 2 deletes a ticket while PC 1 is offline, PC 1's
+local copy won't disappear until you say so — the app doesn't yet track
+deletions across an offline gap. Fine for a two-PC shop; ask if this needs
+tightening up.
+
+**First login still needs internet, once.** After that, Supabase keeps you
+signed in locally, so subsequent offline sessions don't need to re-authenticate.
 
 ---
 

@@ -17,12 +17,13 @@ create index if not exists clients_phone_idx on clients (phone);
 create index if not exists clients_name_idx  on clients (lower(name));
 
 -- ---------- tickets --------------------------------------------------
--- Postgres hands out the ticket number, so two PCs can never take the same one.
-create sequence if not exists ticket_seq start 1;
-
+-- Ticket numbers are generated in the browser (see src/lib/api.js),
+-- not by Postgres — that's what lets a ticket be created with no
+-- internet connection. Each device has its own short tag baked into
+-- the number, so two offline PCs can never hand out the same one.
 create table if not exists tickets (
   id           uuid primary key default gen_random_uuid(),
-  no           text unique not null default 'CD-' || lpad(nextval('ticket_seq')::text, 5, '0'),
+  no           text unique not null,
   client_id    uuid not null references clients (id) on delete cascade,
   device_type  text not null default '',
   model        text not null default '',

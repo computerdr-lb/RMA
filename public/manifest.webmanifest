@@ -1,0 +1,8 @@
+{
+  "name": "Computer Doctor",
+  "short_name": "CD RMA",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#C9D7D3",
+  "theme_color": "#14464F"
+}

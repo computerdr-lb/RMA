@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { api } from "./lib/api.js";
+import { api, onSyncChange, newTicketNo } from "./lib/api.js";
 
 /* ============================================================
    COMPUTER DOCTOR — RMA / device intake system
@@ -173,89 +173,74 @@ export default function ComputerDoctor({ user, onSignOut }) {
   const [route, setRoute] = useState({ name: "intake" });
   const [toast, setToast] = useState(null);
   const [printJob, setPrintJob] = useState(null); // {kind, ticket, client}
-  const [offline, setOffline] = useState(false);
+  const [sync, setSync] = useState({ online: navigator.onLine, pending: 0, syncing: false });
 
   const say = (msg) => {
     setToast(msg);
     setTimeout(() => setToast(null), 2600);
   };
 
-  const refresh = async () => {
-    try {
-      const [c, t, i, s] = await Promise.all([
-        api.clients.list(),
-        api.tickets.list(),
-        api.items.list(),
-        api.settings.get(),
-      ]);
-      setClients(c);
-      setTickets(t);
-      setItems(i && i.length ? i : DEFAULT_ITEMS);
-      setSettings({ ...DEFAULT_SETTINGS, ...s });
-      setOffline(false);
-    } catch (e) {
-      console.error(e);
-      setOffline(true);
-    } finally {
-      setLoaded(true);
-    }
+  // reads always come from the local store — instant, and correct offline
+  const loadLocal = async () => {
+    const [c, t, i, s] = await Promise.all([
+      api.clients.list(), api.tickets.list(), api.items.list(), api.settings.get(),
+    ]);
+    setClients(c);
+    setTickets(t);
+    setItems(i && i.length ? i : DEFAULT_ITEMS);
+    setSettings({ ...DEFAULT_SETTINGS, ...s });
+    setLoaded(true);
   };
 
   useEffect(() => {
-    refresh();
-    // the other PC saves a ticket -> it appears here within a second
-    const unsub = api.subscribe(() => refresh());
-    return unsub;
+    loadLocal();                 // show data immediately, works with no internet
+    api.init();                  // pulls from Supabase and drains the queue, in the background
+    const offSync = onSyncChange((status) => { setSync(status); loadLocal(); });
+    const unsubRealtime = api.subscribe(() => loadLocal());
+    return () => { offSync(); unsubRealtime(); };
   }, []); // eslint-disable-line
 
+  /* every mutation writes to the local store immediately (so it works
+     offline) and queues for Supabase; failures here are unexpected —
+     the local write already succeeded, so we just tell the person and
+     let the sync queue keep trying */
   const guard = async (fn, msg) => {
     try {
-      const r = await fn();
-      setOffline(false);
-      return r;
+      return await fn();
     } catch (e) {
-      setOffline(true);
       say(msg ? `${msg} ${e.message}` : e.message);
       throw e;
     }
   };
 
-  /* mutations — every one writes straight to Supabase */
-  const saveItems = (next) =>
-    guard(async () => { setItems(next); return api.items.save(next); }, "Could not save the device list:");
-
-  const saveSettings = (next) =>
-    guard(async () => { setSettings(next); return api.settings.save(next); }, "Could not save setup:");
+  const saveItems = (next) => guard(() => api.items.save(next), "Could not save the device list:");
+  const saveSettings = (next) => guard(() => api.settings.save(next), "Could not save setup:");
 
   const addClient = (data) =>
     guard(async () => {
       const c = await api.clients.create(data);
-      setClients((prev) => [c, ...prev]);
+      await loadLocal();
       return c;
     }, "Could not add the client:");
 
   const updateClient = (id, patch) =>
     guard(async () => {
       const c = await api.clients.update(id, patch);
-      setClients((prev) => prev.map((x) => (x.id === id ? c : x)));
+      await loadLocal();
       return c;
     }, "Could not save the client:");
 
   const saveTicket = (draft) =>
     guard(async () => {
-      const saved = draft.id
-        ? await api.tickets.update(draft.id, draft)
-        : await api.tickets.create(draft);
-      setTickets((prev) =>
-        draft.id ? prev.map((t) => (t.id === saved.id ? saved : t)) : [saved, ...prev]
-      );
+      const saved = draft.id ? await api.tickets.update(draft.id, draft) : await api.tickets.create(draft);
+      await loadLocal();
       return saved;
     }, "Could not save the ticket:");
 
   const deleteTicket = (id) =>
     guard(async () => {
       await api.tickets.remove(id);
-      setTickets((prev) => prev.filter((t) => t.id !== id));
+      await loadLocal();
     }, "Could not delete the ticket:");
 
   /* printing */
@@ -308,12 +293,7 @@ export default function ComputerDoctor({ user, onSignOut }) {
       <style id="cd-page-rule">{`@page { size: auto; margin: 6mm; }`}</style>
 
       <div className="app-shell">
-        {offline && (
-          <div className="offline-bar">
-            <b>No connection to the database.</b> Nothing can be saved right now — check the
-            internet, then <button className="link-w" onClick={refresh}>retry</button>.
-          </div>
-        )}
+        <SyncBar sync={sync} />
         {/* ---- left rail ---- */}
         <aside className="rail">
           <div className="brand">
@@ -349,6 +329,12 @@ export default function ComputerDoctor({ user, onSignOut }) {
               <div className="chart-v">{openCount}</div>
               <div className="chart-k">Signed in</div>
               <div className="chart-v mono sm">{user?.email || "—"}</div>
+              {sync.pending > 0 && (
+                <>
+                  <div className="chart-k">Waiting to sync</div>
+                  <div className="chart-v mono" style={{ color: "var(--amber)" }}>{sync.pending}</div>
+                </>
+              )}
               <button className="signout" onClick={onSignOut}>Sign out</button>
             </div>
           </div>
@@ -447,6 +433,25 @@ export default function ComputerDoctor({ user, onSignOut }) {
       {toast && <div className="toast">{toast}</div>}
     </div>
   );
+}
+
+function SyncBar({ sync }) {
+  if (sync.online && sync.pending === 0 && !sync.syncing) return null; // everything's fine, stay out of the way
+
+  let cls = "sync-bar", text;
+  if (!sync.online) {
+    cls += " sync-offline";
+    text = sync.pending > 0
+      ? `Working offline — ${sync.pending} change${sync.pending === 1 ? "" : "s"} will sync once you're back online.`
+      : "Working offline — new tickets and clients save on this device and sync once you're back online.";
+  } else if (sync.syncing) {
+    cls += " sync-busy";
+    text = "Syncing…";
+  } else {
+    cls += " sync-busy";
+    text = `${sync.pending} change${sync.pending === 1 ? "" : "s"} waiting to sync…`;
+  }
+  return <div className={cls}>{text}</div>;
 }
 
 /* ============================================================
@@ -793,6 +798,7 @@ function TicketPage({ existing, client, items, settings, onAddItem, onSave, onDe
     note: "",
     cost: "",
     status: "Received",
+    no: newTicketNo(), // generated once, here — this exact number prints and saves
   };
   const [draft, setDraft] = useState(existing || blank);
   const [dirty, setDirty] = useState(false);
@@ -824,8 +830,8 @@ function TicketPage({ existing, client, items, settings, onAddItem, onSave, onDe
     try { await commit(); say("Ticket saved."); } catch { /* toast already shown */ }
   };
 
-  // never print a ticket that did not reach the database — the paper would
-  // carry a number nobody can look up
+  // the ticket saved locally the instant it was created (even offline), so
+  // printing never has to wait on the network
   const saveAndPrint = async (kind) => {
     try {
       const t = await commit();
@@ -1338,9 +1344,9 @@ select.in { cursor: pointer; }
 .empty h2 { font-family: var(--display); font-size: 26px; margin: 0 0 8px; }
 .empty p { color: var(--muted); margin: 0 0 18px; }
 
-.offline-bar { grid-column: 1 / -1; background: var(--red); color: #fff; padding: 10px 18px; font-size: 13px; }
-.offline-bar b { margin-right: 6px; }
-.link-w { background: none; border: 0; color: #fff; text-decoration: underline; cursor: pointer; font: inherit; padding: 0 4px; }
+.sync-bar { grid-column: 1 / -1; padding: 9px 18px; font-size: 13px; font-weight: 500; }
+.sync-bar.sync-offline { background: #FFF3D6; color: #6A5312; border-bottom: 1px solid #F0D999; }
+.sync-bar.sync-busy { background: #E4F0FA; color: #1C4E7A; border-bottom: 1px solid #BCD9EE; }
 .chart-v.sm { font-size: 11px; color: #B9D2CE; word-break: break-all; }
 .signout { margin-top: 12px; background: none; border: 1px solid rgba(255,255,255,.25); color: #B9D2CE;
   font-family: var(--display); font-size: 13px; letter-spacing: .08em; text-transform: uppercase;
