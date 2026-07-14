@@ -293,7 +293,7 @@ export default function ComputerDoctor({ user, onSignOut }) {
       <style id="cd-page-rule">{`@page { size: auto; margin: 6mm; }`}</style>
 
       <div className="app-shell">
-        <SyncBar sync={sync} />
+        <SyncLight sync={sync} />
         {/* ---- left rail ---- */}
         <aside className="rail">
           <div className="brand">
@@ -435,23 +435,25 @@ export default function ComputerDoctor({ user, onSignOut }) {
   );
 }
 
-function SyncBar({ sync }) {
-  if (sync.online && sync.pending === 0 && !sync.syncing) return null; // everything's fine, stay out of the way
-
-  let cls = "sync-bar", text;
+function SyncLight({ sync }) {
+  // always mounted, same size always — only color/label change, so the
+  // page layout never shifts as sync state comes and goes
+  let state = "green", label = "Online — all synced";
   if (!sync.online) {
-    cls += " sync-offline";
-    text = sync.pending > 0
-      ? `Working offline — ${sync.pending} change${sync.pending === 1 ? "" : "s"} will sync once you're back online.`
-      : "Working offline — new tickets and clients save on this device and sync once you're back online.";
-  } else if (sync.syncing) {
-    cls += " sync-busy";
-    text = "Syncing…";
-  } else {
-    cls += " sync-busy";
-    text = `${sync.pending} change${sync.pending === 1 ? "" : "s"} waiting to sync…`;
+    state = "yellow";
+    label = sync.pending > 0
+      ? `Working offline — ${sync.pending} change${sync.pending === 1 ? "" : "s"} will sync when you're back online`
+      : "Working offline — saves stay on this device and sync once you're back online";
+  } else if (sync.syncing || sync.pending > 0) {
+    state = "yellow";
+    label = sync.syncing ? "Syncing…" : `${sync.pending} change${sync.pending === 1 ? "" : "s"} waiting to sync`;
   }
-  return <div className={cls}>{text}</div>;
+  return (
+    <div className={`sync-light sync-${state}`} title={label}>
+      <span className="sync-dot" />
+      <span className="sync-label">{label}</span>
+    </div>
+  );
 }
 
 /* ============================================================
@@ -1178,7 +1180,7 @@ const CSS = `
 @keyframes bp { 0%,100% { opacity: .25; transform: scale(.8);} 50% { opacity: 1; transform: scale(1.3);} }
 
 /* layout */
-.app-shell { display: grid; grid-template-columns: 232px 1fr; grid-auto-rows: min-content 1fr; min-height: 100vh; }
+.app-shell { display: grid; grid-template-columns: 232px 1fr; min-height: 100vh; }
 
 /* rail */
 .rail {
@@ -1344,9 +1346,22 @@ select.in { cursor: pointer; }
 .empty h2 { font-family: var(--display); font-size: 26px; margin: 0 0 8px; }
 .empty p { color: var(--muted); margin: 0 0 18px; }
 
-.sync-bar { grid-column: 1 / -1; padding: 9px 18px; font-size: 13px; font-weight: 500; }
-.sync-bar.sync-offline { background: #FFF3D6; color: #6A5312; border-bottom: 1px solid #F0D999; }
-.sync-bar.sync-busy { background: #E4F0FA; color: #1C4E7A; border-bottom: 1px solid #BCD9EE; }
+.sync-light {
+  position: fixed; top: 14px; right: 18px; z-index: 50;
+  display: flex; align-items: center; gap: 7px;
+  background: #fff; border: 1px solid var(--line); border-radius: 999px;
+  padding: 6px 12px 6px 9px; box-shadow: 0 6px 16px -8px rgba(17,38,43,.3);
+  font-size: 12px; color: var(--ink); max-width: 260px;
+}
+.sync-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.sync-green .sync-dot { background: var(--green); }
+.sync-yellow .sync-dot { background: var(--amber); animation: sync-pulse 1.6s ease-in-out infinite; }
+@keyframes sync-pulse { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
+.sync-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 980px) {
+  .sync-light { max-width: 46px; }
+  .sync-label { display: none; }
+}
 .chart-v.sm { font-size: 11px; color: #B9D2CE; word-break: break-all; }
 .signout { margin-top: 12px; background: none; border: 1px solid rgba(255,255,255,.25); color: #B9D2CE;
   font-family: var(--display); font-size: 13px; letter-spacing: .08em; text-transform: uppercase;
